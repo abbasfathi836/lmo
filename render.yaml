@@ -1,0 +1,9 @@
+services:
+  - type: web                  # حتما نوع سرویس را web انتخاب کنید
+    name: bale-bot             # نام سرویس در Render
+    runtime: python            # نوع runtime
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    env: python
+    plan: free                 # پلن رایگان
+    healthCheckPath: /         # مسیر keep-alive

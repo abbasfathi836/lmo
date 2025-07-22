@@ -9,7 +9,7 @@ class BaleBot:
     def __init__(self, token=None):
         self.token = token or os.getenv("1470628476:7pIGfQhkk3h3TZx5K93dP5wMzXRCA5Zk5xjaPWP2")
         if not self.token:
-            raise ValueError("توکن ربات باید تنظیم شود")
+            raise ValueError("1470628476:7pIGfQhkk3h3TZx5K93dP5wMzXRCA5Zk5xjaPWP2")
         self.base_url = f"https://tapi.bale.ai/bot{self.token}/"
         
     def get_updates(self, offset=None, timeout=30):

@@ -9,6 +9,12 @@ class BaleBot:
     def __init__(self, token=None):
         self.token = token or "1470628476:7pIGfQhkk3h3TZx5K93dP5wMzXRCA5Zk5xjaPWP2"
         self.base_url = f"https://tapi.bale.ai/bot{self.token}/"
+        self.tracking_file = "tracking_codes.txt"  # فایل ذخیره کدهای ملی و رهگیری
+        
+        # ایجاد فایل اگر وجود نداشته باشد
+        if not os.path.exists(self.tracking_file):
+            with open(self.tracking_file, 'w') as f:
+                f.write("")
         
         # اطلاعات استاتیک از سایت gl.lmo.ir
         self.data = {
@@ -95,7 +101,8 @@ class BaleBot:
             "keyboard": [
                 ["📍 آدرس مراکز", "🩺 خدمات تخصصی"],
                 ["📄 مدارک لازم", "ℹ️ اطلاعات تماس"],
-                ["🏢 درباره ما", "📋 پروسه‌های اداری"]
+                ["🏢 درباره ما", "📋 پروسه‌های اداری"],
+                ["📬 پیگیری نامه با کد ملی"]  # منوی جدید اضافه شد
             ],
             "resize_keyboard": True,
             "one_time_keyboard": False
@@ -118,6 +125,18 @@ class BaleBot:
             "keyboard": keyboard,
             "resize_keyboard": True
         }
+    
+    def search_national_code(self, national_code):
+        try:
+            with open(self.tracking_file, 'r') as f:
+                for line in f:
+                    parts = line.strip().split(',')
+                    if len(parts) >= 2 and parts[0] == national_code:
+                        return parts[1]  # کد رهگیری
+            return None
+        except Exception as e:
+            print(f"Error searching national code: {e}")
+            return None
     
     def handle_message(self, message):
         text = message.get("text", "").strip()
@@ -161,6 +180,18 @@ class BaleBot:
             procedures = "\n\n".join([f"**{title}**\n{desc}" for title, desc in self.data["procedures"].items()])
             response = f"**پروسه‌های اداری:**\n\n{procedures}"
             self.send_message(chat_id, response)
+        
+        elif text == "📬 پیگیری نامه با کد ملی":
+            response = "لطفاً کد ملی خود را وارد نمایید:"
+            self.send_message(chat_id, response)
+        
+        elif text.isdigit() and len(text) == 10:  # فرض بر اینکه کد ملی 10 رقمی است
+            tracking_code = self.search_national_code(text)
+            if tracking_code:
+                response = f"📬 کد رهگیری نامه شما:\n{tracking_code}\n\nبرای پیگیری می‌توانید با شماره تلفن پزشکی قانونی تماس بگیرید."
+            else:
+                response = "❌ نامه‌ای با کد ملی وارد شده یافت نشد.\nلطفاً از صحت کد ملی اطمینان حاصل نمایید."
+            self.send_message(chat_id, response, reply_markup=self.create_main_keyboard())
         
         elif text == "🔙 بازگشت به منوی اصلی":
             response = "منوی اصلی:"

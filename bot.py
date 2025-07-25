@@ -181,7 +181,7 @@ class BaleBot:
             response = f"**پروسه‌های اداری:**\n\n{procedures}"
             self.send_message(chat_id, response)
         
-        elif text == "پیگیری نامه با شماره پرونده"
+        elif text == "پیگیری نامه با شماره پرونده":
             response = "لطفاً شماره پرونده خود را وارد نمایید:"
             self.send_message(chat_id, response)
         

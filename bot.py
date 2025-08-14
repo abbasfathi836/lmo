@@ -7,7 +7,7 @@ app = Flask(__name__)
 
 class BaleBot:
     def __init__(self, token=None):
-        self.token = token or "1470628476:7pIGfQhkk3h3TZx5K93dP5wMzXRCA5Zk5xjaPWP2"
+        self.token = token or "329776201:mAet5gsviBr2xjJWGvueSg2OUa3B2Np913cc3u8f"
         self.base_url = f"https://tapi.bale.ai/bot{self.token}/"
         self.tracking_file = "tracking_codes.txt"  # فایل ذخیره کدهای ملی و رهگیری
         

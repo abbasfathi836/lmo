@@ -1,219 +1,370 @@
 import os
-import requests
+import sys
 import time
+import json
+import signal
+import requests
 from flask import Flask, jsonify
+import threading
 
 app = Flask(__name__)
 
-class BaleBot:
-    def __init__(self, token=None):
-        self.token = token or "329776201:mAet5gsviBr2xjJWGvueSg2OUa3B2Np913cc3u8f"
-        self.base_url = f"https://tapi.bale.ai/bot{self.token}/"
-        self.tracking_file = "tracking_codes.txt"  # فایل ذخیره کدهای ملی و رهگیری
-        
-        # ایجاد فایل اگر وجود نداشته باشد
-        if not os.path.exists(self.tracking_file):
-            with open(self.tracking_file, 'w') as f:
-                f.write("")
-        
-        # اطلاعات استاتیک از سایت gl.lmo.ir
-        self.data = {
-            "main_center": {
-                "address": "رشت، کمربندی شهید بهشتی، استقامت، ستاد مرکزی اداره کل پزشکی قانونی استان گیلان",
-                "phone": "۰۱۳۳۳۵۴۳۴۲۶",
-                "manager": "دکتر علی سلیمانپور"
-            },
-            "cities": {
-                "رشت": "کمربندی شهید بهشتی، استقامت",
-                "انزلی": "بلوار امام خمینی، جنب بیمارستان ۱۷ شهریور",
-                "لاهیجان": "خیابان امام، جنب بیمارستان ۲۲ آبان",
-                "تالش": "بلوار معلم، جنب درمانگاه تالش",
-                "آستارا": "خیابان امام، روبروی اداره بهداشت",
-                "فومن": "خیابان شهدا، جنب بیمارستان فومن",
-                "صومعه‌سرا": "خیابان امام، جنب شبکه بهداشت",
-                "رودسر": "خیابان امام، جنب درمانگاه رودسر",
-                "املش": "خیابان شهید رجایی، جنب مرکز بهداشت",
-                "سیاهکل": "خیابان امام، جنب بیمارستان سیاهکل",
-                "ماسال": "خیابان شهید انصاری، جنب مرکز بهداشت",
-                "رضوانشهر": "بلوار امام خمینی، جنب درمانگاه رضوانشهر",
-                "لنگرود": "خیابان امام، جنب بیمارستان لنگرود",
-                "رودبار": "خیابان شهدا، جنب مرکز بهداشت",
-                "شفت": "خیابان امام، جنب بیمارستان شفت",
-                "بندرانزلی": "بلوار ساحلی، جنب بیمارستان امیرالمومنین"
-            },
-            "services": {
-                "تعیین سن": "برای افراد بدون مدارک شناسایی\nمدارک مورد نیاز: شناسنامه والدین + عکس فرد",
-                "آزمایش DNA": "برای اثبات نسب\nهزینه: ۵-۲۰ میلیون تومان\nزمان نتیجه‌گیری: ۲-۴ هفته",
-                "گواهی فوت": "صدور گواهی پزشکی قانونی\nمدارک: مدارک متوفی + گزارش اولیه مرگ",
-                "معاینه بالینی": "در موارد ضرب و جرح، تجاوز و خشونت\nنیاز به معرفی نامه قضایی",
-                "سم‌شناسی": "آزمایش تخصصی مواد مخدر و سموم\nزمان نتیجه‌گیری: ۱-۲ هفته",
-                "تعیین هویت": "شناسایی اجساد و افراد ناشناس"
-            },
-            "documents": {
-                "عمومی": [
-                    "اصل شناسنامه و کارت ملی",
-                    "معرفی‌نامه از مرجع قضایی",
-                    "پرونده پزشکی مرتبط (در صورت وجود)",
-                    "عکس ۴*۳ جدید"
-                ],
-                "ویژه": {
-                    "تعیین سن": ["شناسنامه والدین", "عکس فرد"],
-                    "گواهی فوت": ["شناسنامه متوفی", "گزارش پزشک معالج"],
-                    "آزمایش DNA": ["شناسنامه درخواست‌دهنده", "نسبت مورد ادعا"]
-                }
-            },
-            "procedures": {
-                "مراجعه حضوری": "۱. دریافت نوبت از طریق تماس تلفنی\n۲. حضور در مرکز با مدارک کامل\n۳. انجام فرآیند مورد نظر",
-                "دریافت نتیجه": "۱. مراجعه حضوری پس از اعلام آمادگی نتیجه\n۲. ارائه رسید پرونده\n۳. دریافت مدارک",
-                "اعتراض به نتیجه": "ارسال درخواست کتبی به مدیرکل پزشکی قانونی استان"
-            },
-            "contact": {
-                "تلفن": "۰۱۳۳۳۵۴۳۴۲۶",
-                "ساعات کاری": "شنبه تا چهارشنبه: ۷:۳۰ تا ۱۴:۳۰\nپنجشنبه‌ها: ۷:۳۰ تا ۱۲:۳۰",
-                "ایمیل": "gl.lmo@lmo.ir"
-            }
-        }
-        
-    def get_updates(self, offset=None, timeout=30):
-        url = self.base_url + "getUpdates"
-        params = {"timeout": timeout, "offset": offset} if offset else {"timeout": timeout}
+# -------- تنظیمات اولیه --------
+TOKEN = "329776201:mAet5gsviBr2xjJWGvueSg2OUa3B2Np913cc3u8f"
+BASE_URL = f'https://tapi.bale.ai/bot{TOKEN}/'
+
+# مسیر فایل‌ها
+BASE_PATH = os.path.dirname(os.path.abspath(__file__))
+FILES_PATH = os.path.join(BASE_PATH, 'files')  # مسیر فایل‌های قابل دانلود
+LOCK_FILE = os.path.join(BASE_PATH, 'bale.lock')
+DATA_FILE = os.path.join(BASE_PATH, 'data.json')
+TRACKING_FILE = os.path.join(BASE_PATH, 'tracking.txt')
+
+user_states = {}  # برای مدیریت وضعیت کاربران
+
+# بارگذاری محتوای منوها
+with open(DATA_FILE, 'r', encoding='utf-8') as f:
+    content_data = json.load(f)
+
+# بارگذاری اطلاعات پیگیری
+def load_tracking_data():
+    tracking_data = {}
+    if os.path.exists(TRACKING_FILE):
+        with open(TRACKING_FILE, 'r', encoding='utf-8') as f:
+            for line in f:
+                if ':' in line:
+                    case_num, tracking_num = line.strip().split(':', 1)
+                    tracking_data[case_num.strip()] = tracking_num.strip()
+    return tracking_data
+
+# تبدیل اعداد فارسی به انگلیسی
+def persian_to_english(number):
+    persian_digits = '۰۱۲۳۴۵۶۷۸۹'
+    english_digits = '0123456789'
+    translation_table = str.maketrans(persian_digits, english_digits)
+    return number.translate(translation_table)
+
+# تبدیل اعداد انگلیسی به فارسی برای نمایش
+def english_to_persian(number):
+    english_digits = '0123456789'
+    persian_digits = '۰۱۲۳۴۵۶۷۸۹'
+    translation_table = str.maketrans(english_digits, persian_digits)
+    return str(number).translate(translation_table)
+
+# -------- قفل اجرا --------
+def is_running():
+    if os.path.exists(LOCK_FILE):
+        with open(LOCK_FILE, 'r') as f:
+            pid = f.read().strip()
         try:
-            response = requests.get(url, params=params)
-            return response.json().get("result", [])
-        except Exception as e:
-            print(f"Error in get_updates: {e}")
-            return []
-    
-    def send_message(self, chat_id, text, reply_markup=None):
-        url = self.base_url + "sendMessage"
-        data = {"chat_id": chat_id, "text": text}
-        if reply_markup:
-            data["reply_markup"] = reply_markup
-        try:
-            response = requests.post(url, json=data)
-            return response.json()
-        except Exception as e:
-            print(f"Error in send_message: {e}")
-            return None
-    
-    def create_main_keyboard(self):
-        return {
-            "keyboard": [
-                ["📍 آدرس مراکز", "🩺 خدمات تخصصی"],
-                ["📄 مدارک لازم", "ℹ️ اطلاعات تماس"],
-                ["🏢 درباره ما", "📋 پروسه‌های اداری"],
-                ["پیگیری نامه با شماره پرونده"]  # منوی جدید اضافه شد
-            ],
-            "resize_keyboard": True,
-            "one_time_keyboard": False
+            os.kill(int(pid), 0)
+            print("⚠️ ربات در حال اجراست.")
+            return True
+        except:
+            print("🧹 فایل قفل پاک شد.")
+            os.remove(LOCK_FILE)
+    with open(LOCK_FILE, 'w') as f:
+        f.write(str(os.getpid()))
+    return False
+
+def remove_lock():
+    if os.path.exists(LOCK_FILE):
+        os.remove(LOCK_FILE)
+
+def handle_exit(signum, frame):
+    print("🔴 خروج از ربات...")
+    remove_lock()
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, handle_exit)
+signal.signal(signal.SIGINT, handle_exit)
+
+# -------- API بله --------
+def get_updates(offset=None):
+    url = BASE_URL + 'getUpdates'
+    params = {'timeout': 100, 'offset': offset}
+    try:
+        return requests.get(url, params=params, timeout=30).json()
+    except:
+        return {}
+
+def send_message(chat_id, text, keyboard=None):
+    url = BASE_URL + 'sendMessage'
+    payload = {'chat_id': chat_id, 'text': text}
+    if keyboard:
+        payload['reply_markup'] = {
+            'keyboard': keyboard,
+            'resize_keyboard': True,
+            'one_time_keyboard': False
         }
-    
-    def create_cities_keyboard(self):
-        cities = list(self.data["cities"].keys())
-        keyboard = [cities[i:i+2] for i in range(0, len(cities), 2)]
-        keyboard.append(["🔙 بازگشت به منوی اصلی"])
-        return {
-            "keyboard": keyboard,
-            "resize_keyboard": True
-        }
-    
-    def create_services_keyboard(self):
-        services = list(self.data["services"].keys())
-        keyboard = [services[i:i+2] for i in range(0, len(services), 2)]
-        keyboard.append(["🔙 بازگشت به منوی اصلی"])
-        return {
-            "keyboard": keyboard,
-            "resize_keyboard": True
-        }
-    
-    def search_national_code(self, national_code):
-        try:
-            with open(self.tracking_file, 'r') as f:
-                for line in f:
-                    parts = line.strip().split(',')
-                    if len(parts) >= 2 and parts[0] == national_code:
-                        return parts[1]  # کد رهگیری
-            return None
-        except Exception as e:
-            print(f"Error searching national code: {e}")
-            return None
-    
-    def handle_message(self, message):
-        text = message.get("text", "").strip()
-        chat_id = message["chat"]["id"]
-        
-        # دسته‌بندی پاسخ‌ها
-        if text == "📍 آدرس مراکز":
-            response = "شهر مورد نظر را انتخاب کنید:"
-            self.send_message(chat_id, response, reply_markup=self.create_cities_keyboard())
-        
-        elif text in self.data["cities"]:
-            address = self.data["cities"][text]
-            response = f"📍 **مرکز {text}**:\n{address}\n\n📞 تماس: {self.data['contact']['تلفن']}"
-            self.send_message(chat_id, response)
-        
-        elif text == "🩺 خدمات تخصصی":
-            response = "خدمت مورد نظر را انتخاب کنید:"
-            self.send_message(chat_id, response, reply_markup=self.create_services_keyboard())
-        
-        elif text in self.data["services"]:
-            service_info = self.data["services"][text]
-            response = f"**🩺 {text}**\n\n{service_info}"
-            self.send_message(chat_id, response)
-        
-        elif text == "📄 مدارک لازم":
-            general_docs = "\n".join([f"• {doc}" for doc in self.data["documents"]["عمومی"]])
-            response = f"**مدارک عمومی مورد نیاز:**\n{general_docs}\n\nبرای مدارک خدمات خاص، نام خدمت را وارد کنید."
-            self.send_message(chat_id, response)
-        
-        elif text == "ℹ️ اطلاعات تماس":
-            contact_info = "\n".join([f"• **{key}**: {value}" for key, value in self.data["contact"].items()])
-            response = f"**اطلاعات تماس:**\n{contact_info}"
-            self.send_message(chat_id, response)
-        
-        elif text == "🏢 درباره ما":
-            manager = self.data["main_center"]["manager"]
-            response = f"**پزشکی قانونی استان گیلان**\n\n• مدیرکل: {manager}\n• مسئولیت: بررسی موارد قانونی پزشکی\n• زیرمجموعه قوه قضاییه"
-            self.send_message(chat_id, response)
-        
-        elif text == "📋 پروسه‌های اداری":
-            procedures = "\n\n".join([f"**{title}**\n{desc}" for title, desc in self.data["procedures"].items()])
-            response = f"**پروسه‌های اداری:**\n\n{procedures}"
-            self.send_message(chat_id, response)
-        
-        elif text == "پیگیری نامه با شماره پرونده":
-            response = "لطفاً شماره پرونده خود را وارد نمایید:"
-            self.send_message(chat_id, response)
-        
-        elif text.isdigit() and len(text) == 10:  # فرض بر اینکه کد ملی 10 رقمی است
-            tracking_code = self.search_national_code(text)
-            if tracking_code:
-                response = f"📬 کد رهگیری نامه شما:\n{tracking_code}\n\nبرای پیگیری می‌توانید با شماره تلفن پزشکی قانونی تماس بگیرید."
-            else:
-                response = "❌ نامه‌ای با شماره پرونده وارد شده یافت نشد.\nلطفاً از صحت شماره پرونده اطمینان حاصل نمایید."
-            self.send_message(chat_id, response, reply_markup=self.create_main_keyboard())
-        
-        elif text == "🔙 بازگشت به منوی اصلی":
-            response = "منوی اصلی:"
-            self.send_message(chat_id, response, reply_markup=self.create_main_keyboard())
-        
-        else:
-            welcome_msg = (
-                "به سامانه خدمات الکترونیک پزشکی قانونی استان گیلان خوش آمدید. 🌿\n\n"
-                "جهت دریافت اطلاعات، یکی از گزینه‌های زیر را انتخاب کنید:"
-            )
-            self.send_message(chat_id, welcome_msg, reply_markup=self.create_main_keyboard())
-    
-    def run(self):
-        last_update_id = 0
-        print("🤖 ربات میز خدمت پزشکی قانونی گیلان فعال است...")
-        while True:
-            updates = self.get_updates(offset=last_update_id + 1)
-            for update in updates:
-                last_update_id = update["update_id"]
-                if "message" in update:
-                    self.handle_message(update["message"])
-            time.sleep(0.5)
+    try:
+        requests.post(url, json=payload, timeout=10)
+    except:
+        pass
+
+def send_document(chat_id, file_path, caption=None):
+    url = BASE_URL + 'sendDocument'
+    files = {'document': open(file_path, 'rb')}
+    data = {'chat_id': chat_id}
+    if caption:
+        data['caption'] = caption
+    try:
+        requests.post(url, files=files, data=data, timeout=30)
+    except Exception as e:
+        print(f"Error sending document: {e}")
+
+# -------- حلقه اصلی ربات --------
+def run_bot():
+    print("✅ ربات فعال شد.")
+    last_update_id = None
+
+    while True:
+        updates = get_updates(last_update_id)
+        if 'result' in updates:
+            for update in updates['result']:
+                if 'message' not in update:
+                    continue
+
+                msg = update['message']
+                chat_id = msg['chat']['id']
+                text = msg.get('text', '').strip()
+                current_state = user_states.get(chat_id, {})
+
+                # --- /start
+                if text == '/start':
+                    welcome = (
+                        "🏥 به *بازوی خدمت پزشکی قانونی گیلان* خوش آمدید.\n\n"
+                        "لطفاً یکی از گزینه‌های زیر را انتخاب کنید:"
+                    )
+                    user_states[chat_id] = {'menu': 'main'}
+                    send_message(chat_id, welcome,
+                        keyboard=[
+                            ['📌 آدرس و تلفن مراکز', '🩺 خدمات'],
+                            ['ℹ️ درباره ما', '📄 پیگیری نامه'],
+                            ['🔙 بازگشت']
+                        ])
+                    last_update_id = update['update_id'] + 1
+                    continue
+
+                # --- بازگشت به منوی اصلی
+                if text == '🔙 بازگشت':
+                    user_states[chat_id] = {'menu': 'main'}
+                    send_message(chat_id, 'منوی اصلی:',
+                        keyboard=[
+                            ['📌 آدرس و تلفن مراکز', '🩺 خدمات'],
+                            ['ℹ️ درباره ما', '📄 پیگیری نامه'],
+                            ['🔙 بازگشت']
+                        ])
+                    last_update_id = update['update_id'] + 1
+                    continue
+
+                # --- منوی اصلی
+                if text == '📌 آدرس و تلفن مراکز':
+                    user_states[chat_id] = {'menu': 'address'}
+                    cities = list(content_data.get('شهرستان‌ها', {}).keys())
+                    keyboard = []
+                    for i in range(0, len(cities), 2):
+                        keyboard.append(cities[i:i+2])
+                    keyboard.append(['🔙 بازگشت'])
+                    send_message(chat_id, 'لطفاً شهرستان مورد نظر را انتخاب کنید:', keyboard=keyboard)
+                    last_update_id = update['update_id'] + 1
+                    continue
+
+                if text == '🩺 خدمات':
+                    user_states[chat_id] = {'menu': 'services'}
+                    send_message(chat_id, 'لطفاً نوع خدمت مورد نظر را انتخاب کنید:',
+                        keyboard=[
+                            ['معاینات بالینی', 'متوفیات'],
+                            ['کمیسیون', 'آزمایشگاه'],
+                            ['🔙 بازگشت']
+                        ])
+                    last_update_id = update['update_id'] + 1
+                    continue
+
+                if text == 'ℹ️ درباره ما':
+                    user_states[chat_id] = {'menu': 'about'}
+                    send_message(chat_id, content_data.get('درباره ما', 'اطلاعاتی موجود نیست.'),
+                        keyboard=[['🔙 بازگشت']])
+                    last_update_id = update['update_id'] + 1
+                    continue
+
+                if text == '📄 پیگیری نامه':
+                    # بارگذاری مجدد اطلاعات پیگیری
+                    tracking_data = load_tracking_data()
+                    user_states[chat_id] = {'menu': 'tracking', 'awaiting_case': True}
+                    
+                    # ارسال پیام اطلاع‌رسانی
+                    info_msg = (
+                        "ℹ️ توجه:\n"
+                        "قبل از وارد کردن کد ملی به این نکته توجه داشته باشید که باید از زمان مراجعه شما به پزشکی قانونی در صورت خاتمه پرونده حداقل ۲ روز کاری گذشته باشد.\n\n"
+                        "اطلاعات این قسمت مربوط به نامه‌های ارسال شده از تاریخ ۱۴۰۴/۰۵/۱۳ به بعد کلانتری‌های حوزه رشت می‌باشد.\n\n"
+                        "لطفاً کد ملی شخص دارای پرونده را وارد کنید:"
+                    )
+                    
+                    send_message(chat_id, info_msg, keyboard=[['🔙 بازگشت']])
+                    last_update_id = update['update_id'] + 1
+                    continue
+
+                # --- پردازش وضعیت‌های خاص
+                current_state = user_states.get(chat_id, {})
+                
+                # پیگیری نامه
+                if current_state.get('awaiting_case'):
+                    # بارگذاری مجدد اطلاعات پیگیری قبل از جستجو
+                    tracking_data = load_tracking_data()
+                    case_number = persian_to_english(text.strip())
+                    
+                    # بررسی صحت کد ملی
+                    if len(case_number) != 10 or not case_number.isdigit():
+                        send_message(chat_id, '❌ لطفاً کد ملی شخص دارای پرونده را وارد کنید(10 رقم).',
+                            keyboard=[['🔙 بازگشت']])
+                        last_update_id = update['update_id'] + 1
+                        continue
+                    
+                    # جستجو با 5 رقم آخر
+                    last_five = case_number[-5:]
+                    tracking_number = tracking_data.get(last_five)
+                    
+                    if not tracking_number:
+                        # اگر با 5 رقم پیدا نشد، با 6 رقم آخر جستجو می‌کنیم
+                        last_six = case_number[-6:]
+                        tracking_number = tracking_data.get(last_six)
+                    
+                    if tracking_number:
+                        response = (
+                            f"📌 کد ملی وارد شده: {english_to_persian(case_number)}\n"
+                            f"🔖 وضعیت پرونده و یا کد رهگیری ارسال پاسخ به مرجع: {english_to_persian(tracking_number)}"
+                        )
+                    else:
+                        response = (
+                            f"📌 کد ملی وارد شده: {english_to_persian(case_number)}\n"
+                            f"❌ اطلاعاتی برای این کد ملی ثبت نشده است."
+                        )
+                    
+                    send_message(chat_id, response,
+                        keyboard=[
+                            ['📄 پیگیری نامه جدید'],
+                            ['🔙 بازگشت']
+                        ])
+                    user_states[chat_id] = {'menu': 'main'}
+                    last_update_id = update['update_id'] + 1
+                    continue
+
+                # آدرس شهرستان‌ها
+                if current_state.get('menu') == 'address' and text in content_data.get('شهرستان‌ها', {}):
+                    city_info = content_data['شهرستان‌ها'][text]
+                    response = (
+                        f"🏢 {text}\n\n"
+                        f"📌 آدرس:\n{city_info['آدرس']}\n\n"
+                        f"☎️ تلفن: {city_info['تلفن']}\n"
+                    )
+                    
+                    if 'نمابر' in city_info:
+                        response += f"📠 نمابر: {city_info['نمابر']}\n"
+                    if 'پست الکترونیک' in city_info:
+                        response += f"📧 پست الکترونیک: {city_info['پست الکترونیک']}\n"
+                    
+                    send_message(chat_id, response,
+                        keyboard=[
+                            ['📌 آدرس و تلفن مراکز'],
+                            ['🔙 بازگشت']
+                        ])
+                    last_update_id = update['update_id'] + 1
+                    continue
+
+                # خدمات
+                if current_state.get('menu') == 'services':
+                    if text == 'معاینات بالینی':
+                        service_info = content_data.get('معاینات بالینی', 'اطلاعاتی موجود نیست.')
+                        response = "🩺 *معاینات بالینی*\n\n" + service_info
+                        send_message(chat_id, response)
+                        
+                        # ارسال فایل‌های مربوطه
+                        files_to_send = [
+                            ('m1.pdf', 'راهنمای اول معاینات بالینی'),
+                            ('m2.pdf', 'راهنمای دوم معاینات بالینی')
+                        ]
+                        
+                        for filename, caption in files_to_send:
+                            file_path = os.path.join(FILES_PATH, filename)
+                            if os.path.exists(file_path):
+                                send_document(chat_id, file_path, caption)
+                            else:
+                                send_message(chat_id, f"⚠️ فایل {filename} یافت نشد.")
+                        
+                        send_message(chat_id, 
+                            "📋 [مشاهده تعرفه‌های خدمات](https://lmo.ir/fa/index.php?module=cdk&func=loadmodule&system=cdk&sismodule=user/content_view.php&sisOp=view&ctp_id=602&cnt_id=111396&id=2888)",
+                            keyboard=[
+                                ['🩺 خدمات'],
+                                ['🔙 بازگشت']
+                            ])
+                    
+                    elif text == 'متوفیات':
+                        service_info = content_data.get('متوفیات', 'اطلاعاتی موجود نیست.')
+                        response = "⚰️ *متوفیات*\n\n" + service_info
+                        send_message(chat_id, response)
+                        
+                        # ارسال فایل‌های مربوطه
+                        files_to_send = [
+                            ('mo1.pdf', 'راهنمای اول متوفیات'),
+                            ('mo2.pdf', 'راهنمای دوم متوفیات'),
+                            ('mo3.pdf', 'راهنمای سوم متوفیات')
+                        ]
+                        
+                        for filename, caption in files_to_send:
+                            file_path = os.path.join(FILES_PATH, filename)
+                            if os.path.exists(file_path):
+                                send_document(chat_id, file_path, caption)
+                            else:
+                                send_message(chat_id, f"⚠️ فایل {filename} یافت نشد.")
+                        
+                        send_message(chat_id, 
+                            "📋 [مشاهده تعرفه‌های خدمات](https://lmo.ir/fa/index.php?module=cdk&func=loadmodule&system=cdk&sismodule=user/content_view.php&sisOp=view&ctp_id=602&cnt_id=111396&id=2888)",
+                            keyboard=[
+                                ['🩺 خدمات'],
+                                ['🔙 بازگشت']
+                            ])
+                    
+                    elif text == 'کمیسیون':
+                        service_info = content_data.get('کمیسیون', 'اطلاعاتی موجود نیست.')
+                        response = (
+                            "📝 *کمیسیون*\n\n"
+                            f"{service_info}\n\n"
+                            "💰 [مشاهده تعرفه‌های مصوب پزشکی قانونی](https://lmo.ir/fa/index.php?module=cdk&func=loadmodule&system=cdk&sismodule=user/content_view.php&sisOp=view&ctp_id=602&cnt_id=111396&id=2888)"
+                        )
+                        send_message(chat_id, response,
+                            keyboard=[
+                                ['🩺 خدمات'],
+                                ['🔙 بازگشت']
+                            ])
+                    
+                    elif text == 'آزمایشگاه':
+                        service_info = content_data.get('آزمایشگاه', 'اطلاعاتی موجود نیست.')
+                        response = (
+                            "🔬 *آزمایشگاه*\n\n"
+                            f"{service_info}\n\n"
+                            "💰 [مشاهده تعرفه‌های مصوب پزشکی قانونی](https://lmo.ir/fa/index.php?module=cdk&func=loadmodule&system=cdk&sismodule=user/content_view.php&sisOp=view&ctp_id=602&cnt_id=111396&id=2888)"
+                        )
+                        send_message(chat_id, response,
+                            keyboard=[
+                                ['🩺 خدمات'],
+                                ['🔙 بازگشت']
+                            ])
+                    
+                    last_update_id = update['update_id'] + 1
+                    continue
+
+                # --- پاسخ پیش‌فرض
+                user_states[chat_id] = {'menu': 'main'}
+                send_message(chat_id, 'لطفاً یکی از گزینه‌های منو را انتخاب کنید:',
+                    keyboard=[
+                        ['📌 آدرس و تلفن مراکز', '🩺 خدمات'],
+                        ['ℹ️ درباره ما', '📄 پیگیری نامه'],
+                        ['🔙 بازگشت']
+                    ])
+                last_update_id = update['update_id'] + 1
+
+        time.sleep(1)
 
 @app.route('/')
 def home():
@@ -221,13 +372,20 @@ def home():
 
 @app.route('/info')
 def info():
-    bot = BaleBot()
-    return jsonify(bot.data)
+    return jsonify(content_data)
 
 if __name__ == "__main__":
-    import threading
-    bot = BaleBot()
-    bot_thread = threading.Thread(target=bot.run)
-    bot_thread.daemon = True
-    bot_thread.start()
-    app.run(host='0.0.0.0', port=8080)
+    if is_running():
+        print("ربات در حال اجراست. خروج...")
+        sys.exit(0)
+    
+    try:
+        # Start bot in a separate thread
+        bot_thread = threading.Thread(target=run_bot)
+        bot_thread.daemon = True
+        bot_thread.start()
+        
+        # Start Flask app
+        app.run(host='0.0.0.0', port=8080)
+    finally:
+        remove_lock()
